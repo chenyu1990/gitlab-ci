@@ -1,0 +1,72 @@
+#!/bin/bash
+
+MYSQL_VERSION=5.7.27
+MYSQL_IMAGE=mysql:$MYSQL_VERSION
+
+MYSQL_CONTAINER_NAME=mysql-$MYSQL_VERSION
+HOST_MYSQL_DATA_ROOT=/data/mysql
+CONTAINER_MYSQL_DATA_ROOT=/var/lib/mysql
+
+CONTAINER_NETWORK=$MYSQL_CONTAINER_NAME-network
+
+DOCKER_MYSQL_ID=$(docker ps -q --filter name="$MYSQL_CONTAINER_NAME")
+if [ -z "$DOCKER_MYSQL_ID" ]
+then
+    NETWOKR_ID=$(docker network ls -q --filter name="$CONTAINER_NETWORK")
+    if [ -z "$NETWOKR_ID" ]
+    then
+        docker network create "$CONTAINER_NETWORK"
+    fi
+    docker rm -f $MYSQL_CONTAINER_NAME
+    # docker network create $CONTAINER_NETWORK
+    docker run -d \
+        -p 33060:3306 \
+        --name $MYSQL_CONTAINER_NAME \
+        -v /data/mysql-conf:/etc/mysql \
+        -v $HOST_MYSQL_DATA_ROOT:$CONTAINER_MYSQL_DATA_ROOT \
+        --cpus=1 \
+        --restart always \
+        --network $CONTAINER_NETWORK \
+        -e MYSQL_ALLOW_EMPTY_PASSWORD=yes \
+        $MYSQL_IMAGE
+fi
+
+if [ -z "$CI_PROJECT_NAME" ]; then
+    exit
+fi
+
+DATABASE=${CI_PROJECT_NAME//-/@002d}
+
+echo MySQL Intranet 内网
+echo HOST: $MYSQL_CONTAINER_NAME
+echo PORT: 3306
+echo DATABASE: $CI_PROJECT_NAME
+echo USER: $CI_PROJECT_NAME
+echo PASSWORD: \(nil\)
+
+if [ -d "$HOST_MYSQL_DATA_ROOT/$DATABASE" ]; then
+    exit
+fi
+
+PASSWORD=`openssl rand -hex 128 | base64 | head -c 24`
+
+mysql --login-path="gitlab-root" -P 33060 -h 0.0.0.0 << EOF
+CREATE DATABASE IF NOT EXISTS \`$CI_PROJECT_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE USER IF NOT EXISTS '$CI_PROJECT_NAME'@'192.%';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP ON \`$CI_PROJECT_NAME\`.* TO '$CI_PROJECT_NAME'@'192.%';
+
+CREATE USER IF NOT EXISTS '$CI_PROJECT_NAME'@'%' IDENTIFIED WITH mysql_native_password BY '$PASSWORD';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP ON \`$CI_PROJECT_NAME\`.* TO '$CI_PROJECT_NAME'@'%';
+flush privileges;
+EOF
+
+if [ $? == 0 ]; then
+    echo MySQL Extranet 公网
+    echo HOST: sql.*.com
+    echo PORT: 33060
+    echo DATABASE: $CI_PROJECT_NAME
+    echo USER: $CI_PROJECT_NAME
+    echo PASSWORD: $PASSWORD
+    echo $PASSWORD > $HOME/$CI_PROJECT_NAME-mysql
+fi
