@@ -1,4 +1,5 @@
 #!/bin/sh
+# wget https://raw.githubusercontent.com/chenyu1990/gitlab-ci/master/init_dev
 
 VERSION=$(curl -V 2>&1)
 if [ $? == 127 ]; then
@@ -137,6 +138,7 @@ function install_go(){
 }
 function install_nginx_go(){
     install_ngxsite
+    install_go
     if [ ! -f "/usr/local/bin/nginx-go" ]; then
         install_go
         curl -L --output /usr/local/bin/nginx-go https://raw.githubusercontent.com/chenyu1990/gitlab-ci/master/nginx-go
