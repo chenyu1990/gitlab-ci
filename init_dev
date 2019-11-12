@@ -2,29 +2,29 @@
 # wget https://raw.githubusercontent.com/chenyu1990/gitlab-ci/master/init_dev
 
 VERSION=$(curl -V 2>&1)
-if [ $? >= 127 ]; then
+if [ $? -ge 127 ]; then
     apt install -y curl
 fi
 
 VERSION=$(screen -v 2>&1)
-if [ $? >= 127 ]; then
+if [ $? -ge 127 ]; then
     apt install -y screen
 fi
 
 VERSION=$(wget -V 2>&1)
-if [ $? >= 127 ]; then
+if [ $? -ge 127 ]; then
     apt install -y wget
 fi
 
 function install_docker(){
     local VERSION=$(docker -v 2>&1)
-    if [ $? >= 127 ]; then
+    if [ $? -ge 127 ]; then
         echo installing docker...
         wget -O- https://get.docker.com | sh
     fi
 }
 DOCKER_VERSION=$(docker -v 2>&1)
-if [ $? >= 127 ]; then
+if [ $? -ge 127 ]; then
     while true; do
         read -p "Do you wish to install docker?" yn
         case $yn in
@@ -44,12 +44,12 @@ function install_ngxsite(){
 
 function install_nginx(){
     local VERSION=$(nginx -v 2>&1)
-    if [ $? >= 127 ]; then
+    if [ $? -ge 127 ]; then
         apt install nginx -y
     fi
 }
 NGINX_VERSION=$(nginx -v 2>&1)
-if [ $? >= 127 ]; then
+if [ $? -ge 127 ]; then
     while true; do
         read -p "Do you wish to install nginx?" yn
         case $yn in
@@ -62,7 +62,7 @@ fi
 
 function install_mysql_docker_creator(){
     local VERSION=$(mysql -V 2>&1)
-    if [ $? >= 127 ]; then
+    if [ $? -ge 127 ]; then
         apt install mysql-client-5.7 -y
     fi
     if [ ! -f "/usr/local/bin/mysql-docker-creator" ]; then
@@ -84,7 +84,7 @@ fi
 
 function install_gitlab_runner(){
     local VERSION=$(gitlab-runner -v 2>&1)
-    if [ $? >= 127 ]; then
+    if [ $? -ge 127 ]; then
         echo installing gitlab-runner...
         curl -L --output /usr/local/bin/gitlab-runner https://gitlab-runner-downloads.s3.amazonaws.com/latest/binaries/gitlab-runner-linux-amd64
         chmod +x /usr/local/bin/gitlab-runner
@@ -99,8 +99,8 @@ function install_gitlab_runner(){
         chown -R gitlab-runner:gitlab-runner /etc/letsencrypt/live
     fi
 }
-GO_VERSION=$(go version 2>&1)
-if [ $? >= 127 ]; then
+GITLAB_VERSION=$(gitlab-runner -v 2>&1)
+if [ $? -ge 127 ]; then
     while true; do
         read -p "Do you wish to install gitlab-runner?" yn
         case $yn in
@@ -111,9 +111,16 @@ if [ $? >= 127 ]; then
     done
 fi
 
+function install_nginx_go(){
+    install_ngxsite
+    if [ ! -f "/usr/local/bin/nginx-go" ]; then
+        curl -L --output /usr/local/bin/nginx-go https://raw.githubusercontent.com/chenyu1990/gitlab-ci/master/nginx-go
+        chmod +x /usr/local/bin/nginx-go
+    fi
+}
 function install_go(){
     local VERSION=$(go version 2>&1)
-    if [ $? >= 127 ]; then
+    if [ $? -ge 127 ]; then
         echo installing go...
         GOURLREGEX='https://dl.google.com/go/go[0-9\.]+\.linux-amd64.tar.gz'
         echo "Finding latest version of Go for AMD64..."
@@ -136,15 +143,20 @@ function install_go(){
         /usr/local/go/bin/go version
     fi
 }
-function install_nginx_go(){
-    install_ngxsite
-    install_go
-    if [ ! -f "/usr/local/bin/nginx-go" ]; then
-        install_go
-        curl -L --output /usr/local/bin/nginx-go https://raw.githubusercontent.com/chenyu1990/gitlab-ci/master/nginx-go
-        chmod +x /usr/local/bin/nginx-go
-    fi
-}
+
+local VERSION=$(go version 2>&1)
+if [ $? -ge 127 ]; then
+    while true; do
+        read -p "Do you wish to install go?" yn
+        case $yn in
+            [Yy]* ) install_go; break;;
+            [Nn]* ) shift; break;;
+            * ) echo "Please answer yes/y or no/n.";;
+        esac
+    done
+fi
+
+
 if [ ! -f "/usr/local/bin/nginx-go" ]; then
     while true; do
         read -p "Do you wish to install nginx-go?" yn
