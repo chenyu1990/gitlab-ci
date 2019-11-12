@@ -17,7 +17,7 @@ if [ $? -ge 127 ]; then
 fi
 
 function install_docker(){
-    local VERSION=$(docker -v 2>&1)
+    VERSION=$(docker -v 2>&1)
     if [ $? -ge 127 ]; then
         echo installing docker...
         wget -O- https://get.docker.com | sh
@@ -43,7 +43,7 @@ function install_ngxsite(){
 }
 
 function install_nginx(){
-    local VERSION=$(nginx -v 2>&1)
+    VERSION=$(nginx -v 2>&1)
     if [ $? -ge 127 ]; then
         apt install nginx -y
     fi
@@ -61,7 +61,7 @@ if [ $? -ge 127 ]; then
 fi
 
 function install_mysql_docker_creator(){
-    local VERSION=$(mysql -V 2>&1)
+    VERSION=$(mysql -V 2>&1)
     if [ $? -ge 127 ]; then
         apt install mysql-client-5.7 -y
     fi
@@ -83,7 +83,7 @@ if [ ! -f "/usr/local/bin/mysql-docker-creator" ]; then
 fi
 
 function install_gitlab_runner(){
-    local VERSION=$(gitlab-runner -v 2>&1)
+    VERSION=$(gitlab-runner -v 2>&1)
     if [ $? -ge 127 ]; then
         echo installing gitlab-runner...
         curl -L --output /usr/local/bin/gitlab-runner https://gitlab-runner-downloads.s3.amazonaws.com/latest/binaries/gitlab-runner-linux-amd64
@@ -119,7 +119,7 @@ function install_nginx_go(){
     fi
 }
 function install_go(){
-    local VERSION=$(go version 2>&1)
+    VERSION=$(go version 2>&1)
     if [ $? -ge 127 ]; then
         echo installing go...
         GOURLREGEX='https://dl.google.com/go/go[0-9\.]+\.linux-amd64.tar.gz'
@@ -144,7 +144,7 @@ function install_go(){
     fi
 }
 
-local VERSION=$(go version 2>&1)
+GO_VERSION=$(go version 2>&1)
 if [ $? -ge 127 ]; then
     while true; do
         read -p "Do you wish to install go?" yn
@@ -171,7 +171,7 @@ fi
 function run_docker_redis(){
     install_docker
 
-    local VERSION=5.0.6
+    VERSION=5.0.6
     local CONTAINER=redis-$VERSION
     REDIS_CONTAINER_NETWORK=redis-$VERSION-network
     local NETWOKR_ID=$(docker network ls -q --filter name="$REDIS_CONTAINER_NETWORK")

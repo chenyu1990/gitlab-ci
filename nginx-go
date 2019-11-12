@@ -9,16 +9,21 @@ MYSQL_VERSION=5.7.27
 MYSQL_CONTAINER_NAME=mysql-$MYSQL_VERSION
 MYSQL_CONTAINER_NETWORK=$MYSQL_CONTAINER_NAME-network
 
+REDIS_VERSION=5.0.6
+REDIS_CONTAINER_NAME=redis-$REDIS_VERSION
+REDIS_CONTAINER_NETWORK=$REDIS_CONTAINER_NAME-network
+
 GO_ROOT=/data/go
 GO_PROJECT_ROOT=$GO_ROOT/$CI_PROJECT_NAME
+cd $GO_PROJECT_ROOT
 
 function usage(){
     echo "Usage"
-    echo "nginx-go [-s|--use-ssl]"
+    echo "nginx-go [-s|--ssl] [-P|--port] [-c|--conf]"
     exit -1
 }
 
-TEMP=`getopt -o s --long use-ssl: \
+TEMP=`getopt -o sP: --long ssl,redis,port: \
      -n 'nginx-go' -- "$@"`
 
 if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
@@ -37,14 +42,23 @@ while true ; do
         #     esac ;;
         -c|--conf)
             case "$2" in
-                "") echo "e.g. nginx-go"; shift 2 ;;
+                "") usage; shift 2 ;;
                 *)  CONF_FILE=$2 ; shift 2 ;;
             esac ;;
-        -s|--use-ssl)
+        -P|--port)
+            case "$2" in
+                "") usage; shift 2 ;;
+                *)  PARAM_PORT=$2 ; shift 2 ;;
+            esac ;;
+        -s|--ssl)
 			SSL=true ; shift ;;
+        --redis)
+			REDIS=true ; shift ;;
         --) shift ; break ;;
         *)
-			;;
+		usage
+		exit 1
+	;;
     esac
 done
 
@@ -55,29 +69,59 @@ then
     docker network create -d bridge $CI_PROJECT_NAME-network
 fi
 
-CONTAINER_PHPMYADMIN_DIR=/var/www/$CI_PROJECT_NAME/phpMyAdmin
+function rand(){   
+    min=$1   
+    max=$(($2-$min+1))   
+    num=$(date +%s%N)   
+    echo $(($num%$max+$min))   
+}
 
-# GO 先关闭容器，不然程序在运行，无法更新
-docker rm -f $GO_CONTAINER
+if [ $PARAM_PORT > 30000 ]; then
+    PORT=$PARAM_PORT
+else
+    mkdir -p $GO_ROOT/.port/
+    PORT_SAVE_PATH=$GO_ROOT/.port/$CI_PROJECT_NAME
+    if [ ! -f "$PORT_SAVE_PATH" ]; then
+        touch $PORT_SAVE_PATH
+    fi
+    PORT=$(cat $PORT_SAVE_PATH)
+    if [ "$PORT" == "" ]; then
+        while true ; do
+            TRY_PROT=`rand 30000 65535`
+            PORT_USED=$(lsof -i:$TRY_PROT)
+            if [ "$PORT_USED" == "" ]; then
+                PORT=$TRY_PROT
+                echo $PORT > $PORT_SAVE_PATH
+                break
+            fi
+        done
+    fi
+fi
 
 make build-for-alpine
 sudo chown -R gitlab-runner:gitlab-runner $GO_ROOT/*
 mkdir -p $GO_PROJECT_ROOT
 sudo chown -R gitlab-runner:gitlab-runner $GO_ROOT/*
-/bin/cp -r ./ $GO_PROJECT_ROOT
+
+# GO 先关闭容器，不然程序在运行，无法更新
+docker rm -f $GO_CONTAINER
+# /bin/cp -r ./ $GO_PROJECT_ROOT
+rsync -a --exclude .git ./ $GO_PROJECT_ROOT/
 # sudo chown -R www-data:www-data $GO_PROJECT_ROOT
-cd $GO_PROJECT_ROOT
-make swagger
 
 # 启动项目容器
 docker run -d \
-    -p :10088 \
+    -p $PORT:10088 \
     --name $GO_CONTAINER \
     --cpus=1 \
     -v $GO_PROJECT_ROOT:/root/ \
     --restart on-failure \
     --network $MYSQL_CONTAINER_NETWORK \
     $GO_IMAGE
+
+if [ $REDIS ]; then
+    docker network connect $REDIS_CONTAINER_NETWORK $GO_CONTAINER
+fi
 
 DOCKER_STATUS=$(docker ps -q --filter name=$GO_CONTAINER)
 if [ -z "$DOCKER_STATUS" ]
@@ -87,28 +131,41 @@ then
     exit -1
 fi
 
-# DOCKER_STATUS=$(docker ps -q --filter name=$PHP_CONTAINER)
-# if [ -z "$DOCKER_STATUS" ]
+# PORT=`docker inspect -f '{{range $p,$conf := .NetworkSettings.Ports}}{{(index $conf 0).HostPort}}{{end}}' $GO_CONTAINER`
+# if [ -z "$PORT" ]
 # then
-#     echo $PHP_CONTAINER not running.
-#     docker logs $PHP_CONTAINER
-#     exit -1
+#     echo $GO_CONTAINER port is invalid
+#     exit 1
 # fi
-
-PORT=`docker inspect -f '{{range $p,$conf := .NetworkSettings.Ports}}{{(index $conf 0).HostPort}}{{end}}' $GO_CONTAINER`
-if [ -z "$PORT" ]
-then
-    echo $GO_CONTAINER port is invalid
-    exit 1
-fi
 
 #IPADDR=docker-uat
 # IPADDR=`docker inspect -f '{{.NetworkSettings.Networks.bridge.Gateway}}' $CI_PROJECT_NAME`
 IPADDR=0.0.0.0
 
+
+function split_domain() {
+    OLD_IFS="$IFS"
+    IFS="."
+    array=($DOMAIN)
+    IFS="$OLD_IFS" 
+	
+	if [ ${#array[@]} != 3 ]
+	then
+		echo only support secondary domain names...
+		exit 1
+	fi
+	DOMAIN_MIDDLE=${array[1]}
+	DOMAIN_SUFFIX=${array[2]}
+}
 function write_nginx_web_config(){
 if [ $SSL ]
 then
+if [ -r "/etc/letsencrypt/live/$DOMAIN" ]; then
+    SSL_DIRECT=$DOMAIN
+else
+    split_domain
+    SSL_DIRECT=$DOMAIN_MIDDLE.$DOMAIN_SUFFIX
+fi
 cat > $WEB_SERVER_CONFIG_PATH << EOF
 server {
     listen 80;
@@ -124,8 +181,8 @@ server {
     listen [::]:443 ssl;
     server_name ${DOMAIN};
 
-    ssl_certificate /etc/letsencrypt/live/${DOMAIN_MIDDLE}.${DOMAIN_SUFFIX}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN_MIDDLE}.${DOMAIN_SUFFIX}/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/${SSL_DIRECT}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${SSL_DIRECT}/privkey.pem;
     include /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
@@ -220,20 +277,5 @@ if ! expr $DOMAIN : '[A-Za-z0-9-]\{1,\}\(\.[A-Za-z0-9-]\{1,\}\)*\(\.[A-Za-z]\{2,
     exit 1
 fi
 
-function split_domain() {
-    OLD_IFS="$IFS"
-    IFS="."
-    array=($DOMAIN)
-    IFS="$OLD_IFS" 
-	
-	if [ ${#array[@]} != 3 ]
-	then
-		echo only support secondary domain names...
-		exit 1
-	fi
-	DOMAIN_MIDDLE=${array[1]}
-	DOMAIN_SUFFIX=${array[2]}
-}
-
-split_domain
 write_web_config
+

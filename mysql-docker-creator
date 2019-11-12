@@ -18,6 +18,11 @@ then
         docker network create "$CONTAINER_NETWORK"
     fi
     docker rm -f $MYSQL_CONTAINER_NAME
+    MYSQL_ROOT_PASSWORD=$(cat $HOST_MYSQL_DATA_ROOT/.passwd)
+    if [ $? != 0 ]; then
+        MYSQL_ROOT_PASSWORD=`openssl rand -hex 128 | base64 | head -c 24`
+        echo $MYSQL_ROOT_PASSWORD > ~/.mysql.passwd
+    fi
     # docker network create $CONTAINER_NETWORK
     docker run -d \
         -p 33060:3306 \
@@ -27,7 +32,7 @@ then
         --cpus=1 \
         --restart always \
         --network $CONTAINER_NETWORK \
-        -e MYSQL_ALLOW_EMPTY_PASSWORD=yes \
+        -e MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD \
         $MYSQL_IMAGE
 fi
 
@@ -56,6 +61,12 @@ CREATE DATABASE IF NOT EXISTS \`$CI_PROJECT_NAME\` CHARACTER SET utf8mb4 COLLATE
 CREATE USER IF NOT EXISTS '$CI_PROJECT_NAME'@'192.%';
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP ON \`$CI_PROJECT_NAME\`.* TO '$CI_PROJECT_NAME'@'192.%';
 
+CREATE USER IF NOT EXISTS '$CI_PROJECT_NAME'@'172.%';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP ON \`$CI_PROJECT_NAME\`.* TO '$CI_PROJECT_NAME'@'172.%';
+
+CREATE USER IF NOT EXISTS '$CI_PROJECT_NAME'@'%.mysql-5.7.27-network';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP ON \`$CI_PROJECT_NAME\`.* TO '$CI_PROJECT_NAME'@'%.mysql-5.7.27-network';
+
 CREATE USER IF NOT EXISTS '$CI_PROJECT_NAME'@'%' IDENTIFIED WITH mysql_native_password BY '$PASSWORD';
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP ON \`$CI_PROJECT_NAME\`.* TO '$CI_PROJECT_NAME'@'%';
 flush privileges;
@@ -68,5 +79,6 @@ if [ $? == 0 ]; then
     echo DATABASE: $CI_PROJECT_NAME
     echo USER: $CI_PROJECT_NAME
     echo PASSWORD: $PASSWORD
-    echo $PASSWORD > $HOME/$CI_PROJECT_NAME-mysql
+    mkdir -p $HOST_MYSQL_DATA_ROOT/.mysql
+    echo $PASSWORD > $HOST_MYSQL_DATA_ROOT/.mysql/$CI_PROJECT_NAME
 fi
