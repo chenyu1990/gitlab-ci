@@ -1,0 +1,192 @@
+#!/bin/sh
+
+VERSION=$(curl -V 2>&1)
+if [ $? == 127 ]; then
+    apt install -y curl
+fi
+
+VERSION=$(screen -v 2>&1)
+if [ $? == 127 ]; then
+    apt install -y screen
+fi
+
+VERSION=$(wget -V 2>&1)
+if [ $? == 127 ]; then
+    apt install -y wget
+fi
+
+function install_docker(){
+    local VERSION=$(docker -v 2>&1)
+    if [ $? == 127 ]; then
+        echo installing docker...
+        wget -O- https://get.docker.com | sh
+    fi
+}
+DOCKER_VERSION=$(docker -v 2>&1)
+if [ $? == 127 ]; then
+    while true; do
+        read -p "Do you wish to install docker?" yn
+        case $yn in
+            [Yy]* ) install_docker; break;;
+            [Nn]* ) shift; break;;
+            * ) echo "Please answer yes/y or no/n.";;
+        esac
+    done
+fi
+
+function install_ngxsite(){
+    if [ ! -f "/usr/local/bin/ngxsite" ]; then
+        curl -L --output /usr/local/bin/ngxsite https://raw.githubusercontent.com/chenyu1990/gitlab-ci/master/ngxsite
+        chmod +x /usr/local/bin/ngxsite
+    fi
+}
+
+function install_nginx(){
+    local VERSION=$(nginx -v 2>&1)
+    if [ $? == 127 ]; then
+        apt install nginx -y
+    fi
+}
+NGINX_VERSION=$(nginx -v 2>&1)
+if [ $? == 127 ]; then
+    while true; do
+        read -p "Do you wish to install nginx?" yn
+        case $yn in
+            [Yy]* ) install_nginx; break;;
+            [Nn]* ) shift; break;;
+            * ) echo "Please answer yes/y or no/n.";;
+        esac
+    done
+fi
+
+function install_mysql_docker_creator(){
+    local VERSION=$(mysql -V 2>&1)
+    if [ $? == 127 ]; then
+        apt install mysql-client-5.7 -y
+    fi
+    if [ ! -f "/usr/local/bin/mysql-docker-creator" ]; then
+        curl -L --output /usr/local/bin/mysql-docker-creator https://raw.githubusercontent.com/chenyu1990/gitlab-ci/master/mysql-docker-creator
+        chmod +x /usr/local/bin/mysql-docker-creator
+        usermod -aG docker gitlab-runner
+    fi
+}
+if [ ! -f "/usr/local/bin/mysql-docker-creator" ]; then
+    while true; do
+        read -p "Do you wish to install mysql-docker-creator?" yn
+        case $yn in
+            [Yy]* ) install_mysql_docker_creator; break;;
+            [Nn]* ) shift; break;;
+            * ) echo "Please answer yes/y or no/n.";;
+        esac
+    done
+fi
+
+function install_gitlab_runner(){
+    local VERSION=$(gitlab-runner -v 2>&1)
+    if [ $? == 127 ]; then
+        echo installing gitlab-runner...
+        curl -L --output /usr/local/bin/gitlab-runner https://gitlab-runner-downloads.s3.amazonaws.com/latest/binaries/gitlab-runner-linux-amd64
+        chmod +x /usr/local/bin/gitlab-runner
+        useradd --comment 'GitLab Runner' --create-home gitlab-runner --shell /bin/bash
+        gitlab-runner install --user=gitlab-runner --working-directory=/home/gitlab-runner
+        gitlab-runner start
+        gitlab-runner register
+
+        chown -R gitlab-runner:gitlab-runner /etc/nginx/sites-available
+        chown -R gitlab-runner:gitlab-runner /etc/nginx/sites-enabled
+        mkdir -p /etc/letsencrypt/live
+        chown -R gitlab-runner:gitlab-runner /etc/letsencrypt/live
+    fi
+}
+GO_VERSION=$(go version 2>&1)
+if [ $? == 127 ]; then
+    while true; do
+        read -p "Do you wish to install gitlab-runner?" yn
+        case $yn in
+            [Yy]* ) install_gitlab_runner; break;;
+            [Nn]* ) shift; break;;
+            * ) echo "Please answer yes/y or no/n.";;
+        esac
+    done
+fi
+
+function install_go(){
+    local VERSION=$(go version 2>&1)
+    if [ $? == 127 ]; then
+        echo installing go...
+        GOURLREGEX='https://dl.google.com/go/go[0-9\.]+\.linux-amd64.tar.gz'
+        echo "Finding latest version of Go for AMD64..."
+        url="$(wget -qO- https://golang.org/dl/ | grep -oP 'https:\/\/dl\.google\.com\/go\/go([0-9\.]+)\.linux-amd64\.tar\.gz' | head -n 1 )"
+        latest="$(echo $url | grep -oP 'go[0-9\.]+' | grep -oP '[0-9\.]+' | head -c -2 )"
+        echo "Downloading latest Go for AMD64: ${latest}"
+        wget --quiet --continue --show-progress "${url}"
+        unset url
+        unset GOURLREGEX
+        sudo tar -C /usr/local -xzf go"${latest}".linux-amd64.tar.gz
+        echo "Create the skeleton for your local users go directory"
+        mkdir -p /opt/go/{bin,pkg,src}
+        echo "export GOPROXY=https://goproxy.io" >> /etc/profile && source /etc/profile
+        echo "Setting up GOPATH"
+        echo "export GOPATH=/opt/go" >> /etc/profile && source /etc/profile
+        echo "Setting PATH to include golang binaries"
+        echo "export PATH=\$PATH:/usr/local/go/bin:$GOPATH/bin" >> /etc/profile && source /etc/profile
+        chown -R gitlab-runner:gitlab-runner $GOPATH
+        rm go"${latest}".linux-amd64.tar.gz
+        /usr/local/go/bin/go version
+    fi
+}
+function install_nginx_go(){
+    install_ngxsite
+    if [ ! -f "/usr/local/bin/nginx-go" ]; then
+        install_go
+        curl -L --output /usr/local/bin/nginx-go https://raw.githubusercontent.com/chenyu1990/gitlab-ci/master/nginx-go
+        chmod +x /usr/local/bin/nginx-go
+    fi
+}
+if [ ! -f "/usr/local/bin/nginx-go" ]; then
+    while true; do
+        read -p "Do you wish to install nginx-go?" yn
+        case $yn in
+            [Yy]* ) install_nginx_go; break;;
+            [Nn]* ) shift; break;;
+            * ) echo "Please answer yes/y or no/n.";;
+        esac
+    done
+fi
+
+function run_docker_redis(){
+    install_docker
+
+    local VERSION=5.0.6
+    local CONTAINER=redis-$VERSION
+    REDIS_CONTAINER_NETWORK=redis-$VERSION-network
+    local NETWOKR_ID=$(docker network ls -q --filter name="$REDIS_CONTAINER_NETWORK")
+    if [ -z "$NETWOKR_ID" ]
+    then
+        docker network create "$REDIS_CONTAINER_NETWORK"
+    fi
+
+    DOCKER_STATUS=$(docker ps -q --filter name=$CONTAINER)
+    if [ ! -z "$DOCKER_STATUS" ]
+    then
+        echo $CONTAINER is running.
+        return
+    fi
+    docker run \
+        -d --network $REDIS_CONTAINER_NETWORK \
+        --name $CONTAINER \
+        -v /data/$CONTAINER:/data \
+        -p 6379:6379 \
+        redis:$VERSION \
+        redis-server --appendonly yes
+}
+while true; do
+    read -p "Do you wish to run docker redis?" yn
+    case $yn in
+        [Yy]* ) run_docker_redis; break;;
+        [Nn]* ) shift; break;;
+        * ) echo "Please answer yes/y or no/n.";;
+    esac
+done
+
+echo remember edit visudo
