@@ -24,6 +24,7 @@ then
         echo $MYSQL_ROOT_PASSWORD > ~/.mysql.passwd
     fi
     # docker network create $CONTAINER_NETWORK
+    IS_FISRT=true
     docker run -d \
         -p 33060:3306 \
         --name $MYSQL_CONTAINER_NAME \
@@ -53,6 +54,11 @@ if [ -d "$HOST_MYSQL_DATA_ROOT/$DATABASE" ]; then
     exit
 fi
 
+if [ $IS_FISRT ]; then
+    echo "sleep for 30 seconds wating for mysql start"
+    sleep 30s
+fi
+
 PASSWORD=`openssl rand -hex 128 | base64 | head -c 24`
 
 mysql --login-path="gitlab-root" -P 33060 -h 0.0.0.0 << EOF
@@ -67,6 +73,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP ON \`$CI_PROJEC
 CREATE USER IF NOT EXISTS '$CI_PROJECT_NAME'@'%.mysql-5.7.27-network';
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP ON \`$CI_PROJECT_NAME\`.* TO '$CI_PROJECT_NAME'@'%.mysql-5.7.27-network';
 
+DROP USER IF EXISTS '$CI_PROJECT_NAME'@'%';
 CREATE USER IF NOT EXISTS '$CI_PROJECT_NAME'@'%' IDENTIFIED WITH mysql_native_password BY '$PASSWORD';
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP ON \`$CI_PROJECT_NAME\`.* TO '$CI_PROJECT_NAME'@'%';
 flush privileges;
@@ -79,6 +86,6 @@ if [ $? == 0 ]; then
     echo DATABASE: $CI_PROJECT_NAME
     echo USER: $CI_PROJECT_NAME
     echo PASSWORD: $PASSWORD
-    mkdir -p $HOST_MYSQL_DATA_ROOT/.mysql
-    echo $PASSWORD > $HOST_MYSQL_DATA_ROOT/.mysql/$CI_PROJECT_NAME
+    mkdir -p ~/.mysql
+    echo $PASSWORD > ~/.mysql/$CI_PROJECT_NAME
 fi

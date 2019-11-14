@@ -15,7 +15,6 @@ REDIS_CONTAINER_NETWORK=$REDIS_CONTAINER_NAME-network
 
 GO_ROOT=/data/go
 GO_PROJECT_ROOT=$GO_ROOT/$CI_PROJECT_NAME
-cd $GO_PROJECT_ROOT
 
 function usage(){
     echo "Usage"
@@ -76,7 +75,7 @@ function rand(){
     echo $(($num%$max+$min))   
 }
 
-if [ $PARAM_PORT > 30000 ]; then
+if [[ $PARAM_PORT -ge 30000 && $PARAM_PORT -le 65535 ]]; then
     PORT=$PARAM_PORT
 else
     mkdir -p $GO_ROOT/.port/
@@ -97,16 +96,20 @@ else
         done
     fi
 fi
+# GO 先关闭容器，不然程序在运行，无法更新
+docker rm -f $GO_CONTAINER
 
 make build-for-alpine
 sudo chown -R gitlab-runner:gitlab-runner $GO_ROOT/*
 mkdir -p $GO_PROJECT_ROOT
 sudo chown -R gitlab-runner:gitlab-runner $GO_ROOT/*
 
-# GO 先关闭容器，不然程序在运行，无法更新
-docker rm -f $GO_CONTAINER
 # /bin/cp -r ./ $GO_PROJECT_ROOT
-rsync -a --exclude .git ./ $GO_PROJECT_ROOT/
+/bin/cp -rf ./server $GO_PROJECT_ROOT/server
+/bin/cp -rf ./Makefile $GO_PROJECT_ROOT/Makefile
+/bin/cp -rf ./configs $GO_PROJECT_ROOT/configs
+/bin/cp -rf ./docs $GO_PROJECT_ROOT/docs
+
 # sudo chown -R www-data:www-data $GO_PROJECT_ROOT
 
 # 启动项目容器
@@ -279,3 +282,4 @@ fi
 
 write_web_config
 
+cd $GO_PROJECT_ROOT
