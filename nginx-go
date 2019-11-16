@@ -107,6 +107,7 @@ sudo chown -R gitlab-runner:gitlab-runner $GO_ROOT/*
 # /bin/cp -r ./ $GO_PROJECT_ROOT
 /bin/cp -rf ./server $GO_PROJECT_ROOT/server
 /bin/cp -rf ./Makefile $GO_PROJECT_ROOT/Makefile
+/bin/cp -rf ./configs $GO_PROJECT_ROOT/configs
 /bin/cp -rf ./docs $GO_PROJECT_ROOT/docs
 
 # sudo chown -R www-data:www-data $GO_PROJECT_ROOT
