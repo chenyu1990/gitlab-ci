@@ -1,5 +1,6 @@
 #!/bin/sh
 # wget https://raw.githubusercontent.com/chenyu1990/gitlab-ci/master/init_dev
+# ubuntu
 
 VERSION=$(curl -V 2>&1)
 if [ $? -ge 127 ]; then
@@ -21,6 +22,7 @@ function install_docker(){
     if [ $? -ge 127 ]; then
         echo installing docker...
         wget -O- https://get.docker.com | sh
+        systemctl enable docker
     fi
 }
 DOCKER_VERSION=$(docker -v 2>&1)
@@ -191,6 +193,7 @@ function run_docker_redis(){
         --name $CONTAINER \
         -v /data/$CONTAINER:/data \
         -p 6379:6379 \
+        --restart on-failure \
         redis:$VERSION \
         redis-server --appendonly yes
 }
